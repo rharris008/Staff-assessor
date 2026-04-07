@@ -42,7 +42,7 @@
     const SC_LBL={0:"Not Assessed",1:"Not Demonstrated",2:"Developing",3:"Competent",4:"Proficient",5:"Expert"};
     const SC_CLR={0:"#94a3b8",1:"#dc2626",2:"#f97316",3:"#eab308",4:"#22c55e",5:"#0ea5e9"};
     const DW={"Hard Skills":0.5,Cultural:0.3,Leadership:0.2};
-    const TABS=["Dashboard","Staff","Assessments","Fit Matrix","Admin"];
+    const TABS=["Dashboard","Staff","Assessments","Fit Matrix","Admin","Help"];
     const TIERS={READY:{label:"Transfer Ready",color:"#16a34a",bg:"#f0fdf4"},UPSKILL:{label:"Transfer with Upskilling",color:"#d97706",bg:"#fffbeb"},NOT_REC:{label:"Not Recommended",color:"#dc2626",bg:"#fef2f2"}};
 
     function calcTier(a,th){if(a>=th.ready)return TIERS.READY;if(a>=th.upskill)return TIERS.UPSKILL;return TIERS.NOT_REC;}
@@ -148,6 +148,7 @@
             <input type="password" value={pin} onChange={e=>{setPin(e.target.value.replace(/\D/g,"").slice(0,6));setPinErr("");}} onKeyDown={e=>{if(e.key==="Enter")checkPin();}} placeholder="Enter PIN" autoFocus style={{width:"100%",padding:"14px 16px",borderRadius:10,border:`2px solid ${pinErr?"#dc2626":"#e2e8f0"}`,fontSize:24,textAlign:"center",letterSpacing:12,fontFamily:"inherit",boxSizing:"border-box",outline:"none",marginBottom:16}} />
             {pinErr&&<div style={{color:"#dc2626",fontSize:13,marginBottom:12}}>{pinErr}</div>}
             <button onClick={checkPin} style={{width:"100%",padding:"14px",borderRadius:10,border:"none",background:"#0f172a",color:"#fff",fontSize:16,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>Access</button>
+            <div style={{fontSize:12,color:"#94a3b8",marginTop:20}}>Speak to your administrator for the password.</div>
           </div>
         </div>);}
       if(loading){return(<div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:12}}><div style={{fontSize:16}}>Loading from Supabase...</div>{connErr&&<div style={{color:"#dc2626",fontSize:13}}>{connErr}</div>}</div>);}
@@ -421,6 +422,79 @@
                   <div style={{fontSize:12,color:"#64748b",marginTop:12}}>Below the Upskill threshold = Not Recommended. Changes save immediately.</div>
                 </div>
               </div>)}
+            </div>)}
+
+            {/* ═══ HELP ═══ */}
+            {tab==="Help"&&(<div>
+              <div style={{...CC,background:"linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%)",color:"#fff",border:"none"}}>
+                <div style={{fontSize:20,fontWeight:700,marginBottom:4}}>Quick Reference Guide</div>
+                <div style={{fontSize:13,color:"#cbd5e1"}}>ABH Skills Matrix — St Marys → Erskine Park Floor Staff Assessment</div>
+              </div>
+
+              <div style={CC}>
+                <div style={{fontSize:16,fontWeight:700,color:"#0f172a",marginBottom:12}}>How It Works</div>
+                <div style={{display:"flex",gap:16,flexWrap:"wrap"}}>
+                  {[
+                    {n:"1",t:"Set Up Positions",d:"Admin → Positions. Define each role with headcount and required competencies. Add custom competencies under Admin → Competencies.",c:"#3b82f6"},
+                    {n:"2",t:"Assess Each Person",d:"Assessments tab. Select a person, score competencies 0–5, set shift availability (Day/Afternoon/Night), add interview notes.",c:"#8b5cf6"},
+                    {n:"3",t:"Review Results",d:"Fit Matrix tab. Every person scored against every position. Filter by position dropdown. Click a name to edit their assessment.",c:"#16a34a"},
+                  ].map(s=>(<div key={s.n} style={{flex:1,minWidth:240,padding:16,background:"#f8fafc",borderRadius:10,border:"1px solid #e2e8f0"}}>
+                    <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+                      <span style={{width:28,height:28,borderRadius:"50%",background:s.c,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:700,color:"#fff"}}>{s.n}</span>
+                      <span style={{fontSize:14,fontWeight:600}}>{s.t}</span>
+                    </div>
+                    <div style={{fontSize:13,color:"#64748b",lineHeight:1.5}}>{s.d}</div>
+                  </div>))}
+                </div>
+              </div>
+
+              <div style={CC}>
+                <div style={{fontSize:16,fontWeight:700,color:"#0f172a",marginBottom:12}}>Scoring Key</div>
+                <div style={{fontSize:13,color:"#64748b",marginBottom:12}}>Each competency scored 0–5. Weighted: Hard Skills 50%, Cultural 30%, Leadership 20%.</div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(200px, 1fr))",gap:8}}>
+                  {[{v:"0",l:"Not Assessed",d:"Not yet evaluated",c:"#94a3b8"},{v:"1",l:"Not Demonstrated",d:"No evidence of this competency",c:"#dc2626"},{v:"2",l:"Developing",d:"Some awareness, needs support",c:"#f97316"},{v:"3",l:"Competent",d:"Performs with minimal supervision",c:"#eab308"},{v:"4",l:"Proficient",d:"Consistent and independent",c:"#22c55e"},{v:"5",l:"Expert",d:"Can train others and troubleshoot",c:"#0ea5e9"}].map(s=>(<div key={s.v} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",background:"#f8fafc",borderRadius:8}}>
+                    <span style={{width:28,height:24,borderRadius:4,background:s.c+"22",border:`2px solid ${s.c}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,color:s.c,flexShrink:0}}>{s.v}</span>
+                    <div><div style={{fontSize:13,fontWeight:600}}>{s.l}</div><div style={{fontSize:11,color:"#64748b"}}>{s.d}</div></div>
+                  </div>))}
+                </div>
+              </div>
+
+              <div style={CC}>
+                <div style={{fontSize:16,fontWeight:700,color:"#0f172a",marginBottom:12}}>Transfer Tiers</div>
+                <div style={{fontSize:13,color:"#64748b",marginBottom:12}}>Auto-assigned based on weighted average. Thresholds configurable in Admin → Thresholds.</div>
+                {[{l:"Transfer Ready",th:"≥ 3.5",d:"No additional training required for transfer.",c:"#16a34a",bg:"#f0fdf4",bc:"#bbf7d0"},{l:"Transfer with Upskilling",th:"≥ 2.5",d:"Can transfer with targeted training on specific gaps.",c:"#d97706",bg:"#fffbeb",bc:"#fde68a"},{l:"Not Recommended",th:"< 2.5",d:"Does not meet minimum requirements at this time.",c:"#dc2626",bg:"#fef2f2",bc:"#fecaca"}].map(t=>(<div key={t.l} style={{display:"flex",alignItems:"center",gap:16,padding:"10px 16px",marginBottom:6,background:t.bg,borderRadius:8,border:`1px solid ${t.bc}`}}>
+                  <span style={{fontSize:13,fontWeight:700,color:t.c,minWidth:180}}>{t.l}</span>
+                  <span style={{fontSize:13,fontWeight:600,color:"#334155",minWidth:50}}>{t.th}</span>
+                  <span style={{fontSize:13,color:"#64748b"}}>{t.d}</span>
+                </div>))}
+              </div>
+
+              <div style={CC}>
+                <div style={{fontSize:16,fontWeight:700,color:"#0f172a",marginBottom:12}}>Tab Guide</div>
+                {[
+                  {t:"Dashboard",d:"Overview. Click KPI tiles to see the staff list. Click a position in Position Coverage to jump to the Fit Matrix filtered to that role."},
+                  {t:"Staff",d:"Full staff list with scores, tiers, shift availability. Click any row to jump to their assessment. Search bar filters by name, role, area."},
+                  {t:"Assessments",d:"Main working screen. Select a person, score competencies, set shifts, add notes. ← → buttons move between people."},
+                  {t:"Fit Matrix",d:"Heatmap of person vs position. Position dropdown filters and sorts by best fit. Click names to edit assessments."},
+                  {t:"Admin",d:"Setup: Positions (add/edit/remove), Competencies (add custom), Staff (add/upload/edit/remove), Thresholds (configure cutoffs)."},
+                ].map(r=>(<div key={r.t} style={{display:"flex",gap:12,padding:"8px 0",borderBottom:"1px solid #f1f5f9"}}>
+                  <span style={{fontSize:13,fontWeight:600,minWidth:110,color:"#0f172a"}}>{r.t}</span>
+                  <span style={{fontSize:13,color:"#64748b",lineHeight:1.5}}>{r.d}</span>
+                </div>))}
+              </div>
+
+              <div style={CC}>
+                <div style={{fontSize:16,fontWeight:700,color:"#0f172a",marginBottom:12}}>Good to Know</div>
+                {[
+                  "All data saves automatically — no save button. Scores save after 0.5s, notes after 0.8s.",
+                  "Export CSV from the header button at any time for offline reporting.",
+                  "Custom competencies persist across sessions for all users.",
+                  "Shift availability supports 3-shift roster planning: Day, Afternoon, Night. ★ = Preferred.",
+                  "PIN is shared between assessors. Session persists until Logout.",
+                ].map((tip,i)=>(<div key={i} style={{display:"flex",gap:8,fontSize:13,color:"#334155",lineHeight:1.5,marginBottom:4}}>
+                  <span style={{color:"#3b82f6",fontWeight:700,flexShrink:0}}>•</span><span>{tip}</span>
+                </div>))}
+              </div>
             </div>)}
 
           </div>
