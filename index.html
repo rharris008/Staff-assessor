@@ -1,10 +1,391 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Staff Assessor</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ABH Skills Matrix Tracker</title>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'IBM Plex Sans', sans-serif; background: #f8fafc; color: #1e293b; min-height: 100vh; }
+    #root { min-height: 100vh; }
+  </style>
 </head>
 <body>
-    <h1>Welcome to Staff Assessor</h1>
-    <p>Current Date and Time: 2026-04-07 03:12:44 UTC</p>
+  <div id="root"></div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+  <script type="text/babel">
+    const { useState, useEffect, useCallback, useMemo, useRef } = React;
+
+    const SB_URL = "https://gdfbpvzatnqmzujagtqm.supabase.co";
+    const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdkZmJwdnphdG5xbXp1amFndHFtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ2MzE3NTQsImV4cCI6MjA5MDIwNzc1NH0.O0XquoCFEaIL0xJZKGaPrFgfz42A_j1uKRUjhr6Zqvw";
+    const HDR = { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, "Content-Type": "application/json", Prefer: "return=representation" };
+
+    async function sbGet(t,q=""){const r=await fetch(`${SB_URL}/rest/v1/${t}?${q}`,{headers:HDR});if(!r.ok)throw new Error(`GET ${t}: ${r.status}`);return r.json();}
+    async function sbPost(t,d){const r=await fetch(`${SB_URL}/rest/v1/${t}`,{method:"POST",headers:HDR,body:JSON.stringify(d)});if(!r.ok)throw new Error(`POST ${t}: ${r.status}`);return r.json();}
+    async function sbPatch(t,id,d){const r=await fetch(`${SB_URL}/rest/v1/${t}?id=eq.${id}`,{method:"PATCH",headers:HDR,body:JSON.stringify(d)});if(!r.ok)throw new Error(`PATCH ${t}: ${r.status}`);return r.json();}
+    async function sbUpsert(t,d,oc){const h={...HDR,Prefer:"return=representation,resolution=merge-duplicates"};const r=await fetch(`${SB_URL}/rest/v1/${t}?on_conflict=${oc}`,{method:"POST",headers:h,body:JSON.stringify(d)});if(!r.ok)throw new Error(`UPSERT ${t}: ${r.status}`);return r.json();}
+
+    const DEF_HARD=["Forklift Licence","CIP Operation","Line Changeover","Labelling Machine","Palletiser Operation","BIB Filling","Bottle Filling","pH / Conductivity Testing","First Aid Certificate","Confined Space","Working at Heights","Food Safety / HACCP Awareness","Manual Handling","Chemical Handling"];
+    const DEF_CULTURAL=["Reliability / Attendance","Safety Mindset","Teamwork","Initiative","Adaptability to Change","Communication"];
+    const DEF_LEADERSHIP=["Coaching Peers","Shift Handover Ownership","Problem-Solving Under Pressure","Willingness to Step Up","Continuous Improvement Mindset"];
+    const SHIFTS=["Day","Afternoon","Night"];
+    const SHIFT_OPTS=["not_set","Preferred","Available","Not Available"];
+    const SHIFT_CLR={not_set:"#94a3b8",Preferred:"#16a34a",Available:"#0ea5e9","Not Available":"#dc2626"};
+    const SC_LBL={0:"Not Assessed",1:"Not Demonstrated",2:"Developing",3:"Competent",4:"Proficient",5:"Expert"};
+    const SC_CLR={0:"#94a3b8",1:"#dc2626",2:"#f97316",3:"#eab308",4:"#22c55e",5:"#0ea5e9"};
+    const DW={"Hard Skills":0.5,Cultural:0.3,Leadership:0.2};
+    const TABS=["Dashboard","Staff","Assessments","Fit Matrix","Admin"];
+    const TIERS={READY:{label:"Transfer Ready",color:"#16a34a",bg:"#f0fdf4"},UPSKILL:{label:"Transfer with Upskilling",color:"#d97706",bg:"#fffbeb"},NOT_REC:{label:"Not Recommended",color:"#dc2626",bg:"#fef2f2"}};
+
+    function calcTier(a,th){if(a>=th.ready)return TIERS.READY;if(a>=th.upskill)return TIERS.UPSKILL;return TIERS.NOT_REC;}
+    function calcWS(sm,ac){const d={"Hard Skills":[],Cultural:[],Leadership:[]};ac.forEach(c=>{const s=sm[c.name]||0;if(s>0)d[c.domain].push(s);});let tw=0,ws=0;for(const[k,v]of Object.entries(d)){if(v.length>0){const a=v.reduce((a,b)=>a+b,0)/v.length;ws+=a*DW[k];tw+=DW[k];}}return tw>0?ws/tw:0;}
+    function calcFit(sm,comps){if(!comps||comps.length===0)return 0;const r=comps.map(c=>sm[c]||0).filter(s=>s>0);return r.length>0?r.reduce((a,b)=>a+b,0)/r.length:0;}
+    function parseCSV(text){const lines=text.split(/\r?\n/).filter(l=>l.trim());if(lines.length<2)return[];const hd=lines[0].split(",").map(h=>h.trim().toLowerCase().replace(/[^a-z0-9]/g,"_"));return lines.slice(1).map(line=>{const v=[];let c="",q=false;for(const ch of line){if(ch==='"')q=!q;else if(ch===","&&!q){v.push(c.trim());c="";}else c+=ch;}v.push(c.trim());const o={};hd.forEach((h,i)=>{o[h]=v[i]||"";});return o;});}
+
+    const B={padding:"8px 16px",borderRadius:6,border:"none",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit"};
+    const C={background:"#fff",borderRadius:10,border:"1px solid #e2e8f0",padding:20,marginBottom:16};
+    const I={padding:"8px 12px",borderRadius:6,border:"1px solid #cbd5e1",fontSize:14,fontFamily:"inherit",width:"100%",boxSizing:"border-box"};
+    const TH={padding:"10px 14px",textAlign:"left",fontSize:11,fontWeight:600,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.04em"};
+    const TD={padding:"10px 14px"};
+
+    function App(){
+      const [authed,setAuthed]=useState(true);
+      const [pin,setPin]=useState("");
+      const [pinErr,setPinErr]=useState("");
+      const [loading,setLoading]=useState(true);
+      const [connErr,setConnErr]=useState("");
+      const [tab,setTab]=useState("Dashboard");
+      const [staff,setStaff]=useState([]);
+      const [positions,setPositions]=useState([]);
+      const [assessments,setAssessments]=useState({});
+      const [shiftAvail,setShiftAvail]=useState({});
+      const [thresholds,setThresholds]=useState({ready:3.5,upskill:2.5});
+      const [customComps,setCustomComps]=useState([]);
+      const [activeStaffId,setActiveStaffId]=useState(null);
+      const [editingStaff,setEditingStaff]=useState(null);
+      const [editingPos,setEditingPos]=useState(null);
+      const [showUpload,setShowUpload]=useState(null);
+      const [expandedNote,setExpandedNote]=useState(null);
+      const [adminSection,setAdminSection]=useState("positions");
+      const sT=useRef({});
+
+      const allComp=useMemo(()=>[
+        ...DEF_HARD.map(c=>({name:c,domain:"Hard Skills"})),
+        ...customComps.filter(c=>c.domain==="Hard Skills").map(c=>({name:c.name,domain:"Hard Skills"})),
+        ...DEF_CULTURAL.map(c=>({name:c,domain:"Cultural"})),
+        ...customComps.filter(c=>c.domain==="Cultural").map(c=>({name:c.name,domain:"Cultural"})),
+        ...DEF_LEADERSHIP.map(c=>({name:c,domain:"Leadership"})),
+        ...customComps.filter(c=>c.domain==="Leadership").map(c=>({name:c.name,domain:"Leadership"})),
+      ],[customComps]);
+
+      const checkPin=async()=>{setPinErr("");if(!pin.trim()){setPinErr("Enter PIN");return;}try{const cf=await sbGet("skills_app_config","id=eq.1&select=pin_hash,threshold_ready,threshold_upskill");if(cf.length>0&&cf[0].pin_hash===pin.trim()){setAuthed(true);sessionStorage.setItem("abh_sm_auth","1");loadData();}else{setPinErr("Incorrect PIN");}}catch(e){setPinErr("Connection failed: "+e.message);}};
+
+      const loadData=async()=>{
+        setLoading(true);
+        try{
+          const [sd,pd,ad,cd,sa]=await Promise.all([sbGet("skills_staff","is_active=eq.true&order=last_name.asc"),sbGet("skills_positions","is_active=eq.true&order=title.asc"),sbGet("skills_assessments","order=staff_id.asc"),sbGet("skills_app_config","id=eq.1"),sbGet("skills_shift_availability","order=staff_id.asc")]);
+          setStaff(sd||[]);setPositions(pd||[]);
+          if(cd.length>0)setThresholds({ready:parseFloat(cd[0].threshold_ready),upskill:parseFloat(cd[0].threshold_upskill)});
+          const g={};(ad||[]).forEach(a=>{if(!g[a.staff_id])g[a.staff_id]={scores:{},notes:{}};g[a.staff_id].scores[a.competency]=a.score;g[a.staff_id].notes[a.competency]=a.notes||"";});setAssessments(g);
+          const sv={};(sa||[]).forEach(s=>{if(!sv[s.staff_id])sv[s.staff_id]={};sv[s.staff_id][s.shift_type]=s.availability;});setShiftAvail(sv);
+          const allDef=[...DEF_HARD,...DEF_CULTURAL,...DEF_LEADERSHIP];const cc=[];(ad||[]).forEach(a=>{if(!allDef.includes(a.competency)&&!cc.find(c=>c.name===a.competency))cc.push({name:a.competency,domain:a.domain||"Hard Skills"});});setCustomComps(cc);
+          setConnErr("");
+        }catch(e){setConnErr("Failed to load: "+e.message);}
+        setLoading(false);
+      };
+
+      useEffect(()=>{loadData();},[]);
+
+      const updateScore=useCallback((sid,comp,score)=>{const domain=allComp.find(c=>c.name===comp)?.domain||"Hard Skills";setAssessments(p=>({...p,[sid]:{scores:{...(p[sid]?.scores||{}),[comp]:score},notes:p[sid]?.notes||{}}}));const k=`${sid}-${comp}`;clearTimeout(sT.current[k]);sT.current[k]=setTimeout(async()=>{try{await sbUpsert("skills_assessments",[{staff_id:sid,competency:comp,domain,score,assessed_at:new Date().toISOString(),updated_at:new Date().toISOString()}],"staff_id,competency");}catch(e){console.error(e);}},500);},[allComp]);
+
+      const updateNote=useCallback((sid,comp,note)=>{const domain=allComp.find(c=>c.name===comp)?.domain||"Hard Skills";setAssessments(p=>({...p,[sid]:{scores:p[sid]?.scores||{},notes:{...(p[sid]?.notes||{}),[comp]:note}}}));const k=`n-${sid}-${comp}`;clearTimeout(sT.current[k]);sT.current[k]=setTimeout(async()=>{try{await sbUpsert("skills_assessments",[{staff_id:sid,competency:comp,domain,score:assessments[sid]?.scores?.[comp]||0,notes:note,updated_at:new Date().toISOString()}],"staff_id,competency");}catch(e){console.error(e);}},800);},[assessments,allComp]);
+
+      const updateShift=useCallback((sid,st,av)=>{setShiftAvail(p=>({...p,[sid]:{...(p[sid]||{}),[st]:av}}));const k=`sh-${sid}-${st}`;clearTimeout(sT.current[k]);sT.current[k]=setTimeout(async()=>{try{await sbUpsert("skills_shift_availability",[{staff_id:sid,shift_type:st,availability:av,updated_at:new Date().toISOString()}],"staff_id,shift_type");}catch(e){console.error(e);}},500);},[]);
+
+      const addStaff=useCallback(async(o)=>{try{const r=await sbPost("skills_staff",[o]);if(r?.length>0)setStaff(p=>[...p,r[0]]);}catch(e){alert("Add failed: "+e.message);}},[]);
+      const addBulkStaff=useCallback(async(a)=>{try{const r=await sbPost("skills_staff",a);if(r)setStaff(p=>[...p,...r]);}catch(e){alert("Bulk add failed: "+e.message);}},[]);
+      const removeStaff=useCallback(async(id)=>{try{await sbPatch("skills_staff",id,{is_active:false});setStaff(p=>p.filter(s=>s.id!==id));}catch(e){console.error(e);}},[]);
+      const updateStaffField=useCallback((id,f,v)=>{setStaff(p=>p.map(s=>s.id===id?{...s,[f]:v}:s));clearTimeout(sT.current[`sf-${id}-${f}`]);sT.current[`sf-${id}-${f}`]=setTimeout(async()=>{try{await sbPatch("skills_staff",id,{[f]:v,updated_at:new Date().toISOString()});}catch(e){console.error(e);}},600);},[]);
+
+      const addPosition=useCallback(async(o)=>{try{const r=await sbPost("skills_positions",[o]);if(r?.length>0)setPositions(p=>[...p,r[0]]);}catch(e){alert("Add failed: "+e.message);}},[]);
+      const removePosition=useCallback(async(id)=>{try{await sbPatch("skills_positions",id,{is_active:false});setPositions(p=>p.filter(x=>x.id!==id));}catch(e){console.error(e);}},[]);
+      const updatePosition=useCallback(async(id,data)=>{try{const r=await sbPatch("skills_positions",id,{...data,updated_at:new Date().toISOString()});if(r?.length>0)setPositions(p=>p.map(x=>x.id===id?r[0]:x));}catch(e){console.error(e);}},[]);
+      const addCustomComp=useCallback((name,domain)=>{if(!name.trim())return;if(allComp.find(c=>c.name===name)){alert("Already exists");return;}setCustomComps(p=>[...p,{name:name.trim(),domain}]);},[allComp]);
+      const saveThresholds=useCallback(async(t)=>{setThresholds(t);try{await sbPatch("skills_app_config",1,{threshold_ready:t.ready,threshold_upskill:t.upskill,updated_at:new Date().toISOString()});}catch(e){console.error(e);}},[]);
+
+      const exportCSV=useCallback(()=>{
+        const hd=["Employee ID","First Name","Last Name","Role","Cost Centre","Type","Shift","Weighted Score","Tier","Day","Afternoon","Night",...allComp.map(c=>c.name)];
+        const rows=staff.map(s=>{const sm=assessments[s.id]?.scores||{};const ws=calcWS(sm,allComp);const has=Object.values(sm).some(v=>v>0);const tier=has?calcTier(ws,thresholds):{label:"Not Assessed"};const sa=shiftAvail[s.id]||{};return[s.employee_id,s.first_name,s.last_name,s.job_role,s.cost_centre,s.employment_type,s.shift,ws.toFixed(2),tier.label,sa.Day||"",sa.Afternoon||"",sa.Night||"",...allComp.map(c=>sm[c.name]||0)];});
+        const csv=[hd,...rows].map(r=>r.map(v=>`"${v}"`).join(",")).join("\n");const blob=new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8;"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=`ABH_Skills_Matrix_${new Date().toISOString().slice(0,10)}.csv`;a.click();URL.revokeObjectURL(url);
+      },[staff,assessments,shiftAvail,thresholds,allComp]);
+
+      const handleFileUpload=useCallback((type)=>{return(e)=>{const file=e.target.files[0];if(!file)return;const reader=new FileReader();reader.onload=async(ev)=>{const rows=parseCSV(ev.target.result);if(type==="staff"){const ns=rows.map(r=>({employee_id:r.employee_id||r.id||"",first_name:r.first_name||"",last_name:r.last_name||"",job_role:r.job_role||r.role||r.position||"",cost_centre:r.cost_centre||r.department||"",employment_type:r.employment_type||r.type||"",shift:r.shift||"",manager:r.manager||""})).filter(s=>s.first_name);await addBulkStaff(ns);}else{for(const r of rows){const comps=(r.competencies||r.skills||"").split(";").map(c=>c.trim()).filter(Boolean);await addPosition({title:r.title||r.position||"",headcount:parseInt(r.headcount||"1")||1,competencies:comps});}}e.target.value="";setShowUpload(null);};reader.readAsText(file);};},[addBulkStaff,addPosition]);
+
+      const stats=useMemo(()=>{
+        const total=staff.length;const assessed=staff.filter(s=>{const a=assessments[s.id];return a&&Object.values(a.scores||{}).some(v=>v>0);}).length;
+        const tiers={ready:0,upskill:0,notRec:0};const skillGaps={};allComp.forEach(c=>{skillGaps[c.name]={total:0,sum:0};});
+        staff.forEach(s=>{const a=assessments[s.id];if(!a)return;const sm=a.scores||{};const ws=calcWS(sm,allComp);const tier=calcTier(ws,thresholds);if(tier===TIERS.READY)tiers.ready++;else if(tier===TIERS.UPSKILL)tiers.upskill++;else if(ws>0)tiers.notRec++;allComp.forEach(c=>{const v=sm[c.name]||0;if(v>0){skillGaps[c.name].total++;skillGaps[c.name].sum+=v;}});});
+        return{total,assessed,tiers,skillGaps};
+      },[staff,assessments,thresholds,allComp]);
+
+      if(!authed){return(
+        <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%)"}}>
+          <div style={{background:"#fff",borderRadius:16,padding:"48px 40px",width:380,textAlign:"center",boxShadow:"0 24px 48px rgba(0,0,0,0.3)"}}>
+            <div style={{fontSize:24,fontWeight:700,color:"#0f172a",marginBottom:4}}>ABH Skills Matrix</div>
+            <div style={{fontSize:13,color:"#64748b",marginBottom:32}}>St Marys → Erskine Park Assessment</div>
+            <input type="password" value={pin} onChange={e=>{setPin(e.target.value.replace(/\D/g,"").slice(0,6));setPinErr("");}} onKeyDown={e=>{if(e.key==="Enter")checkPin();}} placeholder="Enter PIN" autoFocus style={{width:"100%",padding:"14px 16px",borderRadius:10,border:`2px solid ${pinErr?"#dc2626":"#e2e8f0"}`,fontSize:24,textAlign:"center",letterSpacing:12,fontFamily:"inherit",boxSizing:"border-box",outline:"none",marginBottom:16}} />
+            {pinErr&&<div style={{color:"#dc2626",fontSize:13,marginBottom:12}}>{pinErr}</div>}
+            <button onClick={checkPin} style={{width:"100%",padding:"14px",borderRadius:10,border:"none",background:"#0f172a",color:"#fff",fontSize:16,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>Access</button>
+          </div>
+        </div>);}
+
+      if(loading){return(<div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:12}}><div style={{fontSize:16}}>Loading from Supabase...</div>{connErr&&<div style={{color:"#dc2626",fontSize:13}}>{connErr}</div>}</div>);}
+
+      const activeStaff=staff.find(s=>s.id===activeStaffId);
+
+      return(
+        <div style={{background:"#f8fafc",minHeight:"100vh"}}>
+          {/* HEADER */}
+          <div style={{background:"linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%)",padding:"20px 32px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <div><div style={{color:"#fff",fontSize:22,fontWeight:700}}>ABH Skills Matrix Tracker</div><div style={{color:"#94a3b8",fontSize:13,marginTop:2}}>St Marys → Erskine Park · Floor Staff Assessment</div></div>
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={exportCSV} style={{...B,background:"#334155",color:"#e2e8f0"}}>Export CSV</button>
+              <button onClick={()=>{sessionStorage.removeItem("abh_sm_auth");setAuthed(false);setPin("");}} style={{...B,background:"#7f1d1d",color:"#fecaca"}}>Logout</button>
+            </div>
+          </div>
+
+          {/* TABS */}
+          <div style={{display:"flex",background:"#1e293b",padding:"0 32px"}}>
+            {TABS.map(t=>(<button key={t} onClick={()=>setTab(t)} style={{padding:"12px 24px",background:tab===t?"#f8fafc":"transparent",color:tab===t?"#0f172a":"#94a3b8",border:"none",borderRadius:tab===t?"8px 8px 0 0":0,fontSize:14,fontWeight:tab===t?600:400,cursor:"pointer",fontFamily:"inherit"}}>{t}</button>))}
+          </div>
+
+          <div style={{padding:"24px 32px",maxWidth:1400,margin:"0 auto"}}>
+
+            {/* ═══ DASHBOARD ═══ */}
+            {tab==="Dashboard"&&(<div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(180px, 1fr))",gap:16,marginBottom:24}}>
+                {[{l:"Total Staff",v:stats.total,c:"#0f172a"},{l:"Assessed",v:`${stats.assessed}/${stats.total}`,c:"#0ea5e9"},{l:"Transfer Ready",v:stats.tiers.ready,c:"#16a34a"},{l:"Needs Upskilling",v:stats.tiers.upskill,c:"#d97706"},{l:"Not Recommended",v:stats.tiers.notRec,c:"#dc2626"},{l:"Positions",v:positions.length,c:"#6366f1"}].map(k=>(<div key={k.l} style={{...C,textAlign:"center",padding:"20px 16px"}}><div style={{fontSize:32,fontWeight:700,color:k.c}}>{k.v}</div><div style={{fontSize:12,color:"#64748b",marginTop:4}}>{k.l}</div></div>))}
+              </div>
+              {(()=>{const g=Object.entries(stats.skillGaps).filter(([,v])=>v.total>0).map(([n,v])=>({name:n,avg:v.sum/v.total})).sort((a,b)=>a.avg-b.avg);return g.length>0&&(<div style={C}><div style={{fontSize:15,fontWeight:600,marginBottom:16}}>Skill Gaps (lowest first)</div>{g.map(x=>(<div key={x.name} style={{display:"flex",alignItems:"center",gap:12,marginBottom:6}}><div style={{width:220,fontSize:13,flexShrink:0}}>{x.name}</div><div style={{flex:1,height:22,background:"#f1f5f9",borderRadius:4,position:"relative",overflow:"hidden"}}><div style={{width:`${(x.avg/5)*100}%`,height:"100%",background:x.avg<2.5?"#dc2626":x.avg<3.5?"#d97706":"#16a34a",borderRadius:4}} /><span style={{position:"absolute",right:8,top:2,fontSize:12,fontWeight:600}}>{x.avg.toFixed(1)}</span></div></div>))}</div>);})()}
+              {positions.length>0&&(<div style={C}><div style={{fontSize:15,fontWeight:600,marginBottom:12}}>Position Coverage</div>{positions.map(p=>{const comps=Array.isArray(p.competencies)?p.competencies:JSON.parse(p.competencies||"[]");const q=staff.filter(s=>{const a=assessments[s.id];return a&&calcFit(a.scores||{},comps)>=thresholds.ready;}).length;const f=q<p.headcount;return(<div key={p.id} style={{display:"flex",alignItems:"center",gap:12,padding:"8px 12px",marginBottom:6,background:f?"#fef2f2":"#f0fdf4",borderRadius:6,border:`1px solid ${f?"#fecaca":"#bbf7d0"}`}}><span style={{fontSize:13,fontWeight:600,flex:1}}>{p.title}</span><span style={{fontSize:12,color:"#64748b"}}>Need: {p.headcount}</span><span style={{fontSize:12,fontWeight:600,color:f?"#dc2626":"#16a34a"}}>Qualified: {q}</span>{f&&<span style={{fontSize:11,color:"#dc2626",fontWeight:600}}>SHORTFALL</span>}</div>);})}</div>)}
+            </div>)}
+
+            {/* ═══ STAFF ═══ */}
+            {tab==="Staff"&&(<div>
+              <div style={{fontSize:18,fontWeight:700,marginBottom:16}}>Staff ({staff.length})</div>
+              {staff.length>0&&(<div style={{...C,padding:0,overflow:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}><thead><tr style={{background:"#f1f5f9"}}>{["Name","Role","Area","Type","Shift","Day","Arvo","Night","Score","Tier"].map(h=><th key={h} style={TH}>{h}</th>)}</tr></thead><tbody>
+                {staff.map(s=>{const sm=assessments[s.id]?.scores||{};const ws=calcWS(sm,allComp);const has=Object.values(sm).some(v=>v>0);const tier=has?calcTier(ws,thresholds):null;const sa=shiftAvail[s.id]||{};return(
+                  <tr key={s.id} style={{borderBottom:"1px solid #e2e8f0"}}>
+                    <td style={{...TD,fontWeight:500}}>{s.first_name} {s.last_name}</td>
+                    <td style={TD}>{s.job_role}</td>
+                    <td style={TD}>{s.cost_centre}</td>
+                    <td style={TD}><span style={{padding:"2px 8px",borderRadius:10,fontSize:11,background:s.employment_type==="Full-Time"?"#dbeafe":"#fef3c7",color:s.employment_type==="Full-Time"?"#1d4ed8":"#92400e"}}>{s.employment_type}</span></td>
+                    <td style={TD}>{s.shift}</td>
+                    {SHIFTS.map(sh=>{const v=sa[sh]||"";const clr=v==="Preferred"?"#16a34a":v==="Available"?"#0ea5e9":v==="Not Available"?"#dc2626":"#94a3b8";return(<td key={sh} style={{...TD,fontSize:11,color:clr,fontWeight:500}}>{v==="Preferred"?"★ Pref":v==="Available"?"✓":v==="Not Available"?"✕":"—"}</td>);})}
+                    <td style={{...TD,fontWeight:600}}>{has?ws.toFixed(2):"—"}</td>
+                    <td style={TD}>{tier?<span style={{padding:"3px 10px",borderRadius:12,fontSize:11,fontWeight:600,background:tier.bg,color:tier.color}}>{tier.label}</span>:<span style={{color:"#94a3b8",fontSize:12}}>—</span>}</td>
+                  </tr>);})}
+              </tbody></table></div>)}
+            </div>)}
+
+            {/* ═══ ASSESSMENTS ═══ */}
+            {tab==="Assessments"&&(<div style={{display:"flex",gap:24,alignItems:"flex-start"}}>
+              <div style={{width:280,flexShrink:0}}>
+                <div style={{fontSize:11,fontWeight:600,color:"#64748b",marginBottom:8,textTransform:"uppercase"}}>Select Staff</div>
+                {staff.map(s=>{const scored=Object.values(assessments[s.id]?.scores||{}).filter(v=>v>0).length;const isA=activeStaffId===s.id;return(
+                  <button key={s.id} onClick={()=>setActiveStaffId(s.id)} style={{display:"block",width:"100%",padding:"10px 14px",borderRadius:8,border:isA?"2px solid #0f172a":"1px solid #e2e8f0",background:isA?"#f0f9ff":"#fff",textAlign:"left",cursor:"pointer",fontFamily:"inherit",marginBottom:4}}>
+                    <div style={{fontSize:13,fontWeight:600}}>{s.first_name} {s.last_name}</div>
+                    <div style={{fontSize:11,color:"#64748b"}}>{s.job_role} · {s.shift}</div>
+                    <div style={{fontSize:11,color:scored>0?"#0ea5e9":"#94a3b8",marginTop:4}}>{scored}/{allComp.length} scored</div>
+                  </button>);})}
+              </div>
+              <div style={{flex:1}}>
+                {!activeStaff?<div style={C}><span style={{color:"#64748b"}}>Select a staff member.</span></div>:(
+                  <div>
+                    <div style={{...C,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                      <div><div style={{fontSize:20,fontWeight:700}}>{activeStaff.first_name} {activeStaff.last_name}</div><div style={{fontSize:13,color:"#64748b"}}>{activeStaff.job_role} · {activeStaff.cost_centre} · {activeStaff.shift} · {activeStaff.employment_type}</div></div>
+                      {(()=>{const sm=assessments[activeStaff.id]?.scores||{};const ws=calcWS(sm,allComp);const has=Object.values(sm).some(v=>v>0);const tier=has?calcTier(ws,thresholds):null;return tier?(<div style={{textAlign:"right"}}><div style={{fontSize:28,fontWeight:700,color:tier.color}}>{ws.toFixed(2)}</div><span style={{padding:"4px 12px",borderRadius:14,fontSize:12,fontWeight:600,background:tier.bg,color:tier.color}}>{tier.label}</span></div>):null;})()}
+                    </div>
+                    {/* SHIFT AVAILABILITY */}
+                    <div style={C}><div style={{fontSize:14,fontWeight:700,marginBottom:12}}>Shift Availability</div>
+                      <div style={{display:"flex",gap:16,flexWrap:"wrap"}}>{SHIFTS.map(sh=>{const val=shiftAvail[activeStaff.id]?.[sh]||"not_set";return(<div key={sh} style={{flex:1,minWidth:140}}><div style={{fontSize:12,fontWeight:600,color:"#334155",marginBottom:6}}>{sh} Shift</div><div style={{display:"flex",gap:4}}>{SHIFT_OPTS.filter(o=>o!=="not_set").map(opt=>(<button key={opt} onClick={()=>updateShift(activeStaff.id,sh,val===opt?"not_set":opt)} style={{padding:"6px 12px",borderRadius:6,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",border:val===opt?`2px solid ${SHIFT_CLR[opt]}`:"1px solid #e2e8f0",background:val===opt?SHIFT_CLR[opt]+"18":"#fff",color:val===opt?SHIFT_CLR[opt]:"#94a3b8"}}>{opt}</button>))}</div></div>);})}</div>
+                    </div>
+                    {/* COMPETENCIES */}
+                    {["Hard Skills","Cultural","Leadership"].map(domain=>(
+                      <div key={domain} style={C}><div style={{fontSize:14,fontWeight:700,marginBottom:4}}>{domain}</div><div style={{fontSize:11,color:"#64748b",marginBottom:12}}>Weight: {(DW[domain]*100).toFixed(0)}%</div>
+                        {allComp.filter(c=>c.domain===domain).map(comp=>{const score=assessments[activeStaff.id]?.scores?.[comp.name]||0;const note=assessments[activeStaff.id]?.notes?.[comp.name]||"";const nk=`${activeStaff.id}-${comp.name}`;const nOpen=expandedNote===nk;return(
+                          <div key={comp.name} style={{padding:"10px 0",borderBottom:"1px solid #f1f5f9"}}>
+                            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
+                              <div style={{fontSize:13,fontWeight:500,flex:1}}>{comp.name}</div>
+                              <div style={{display:"flex",gap:4}}>{[0,1,2,3,4,5].map(v=>(<button key={v} onClick={()=>updateScore(activeStaff.id,comp.name,v)} title={SC_LBL[v]} style={{width:32,height:28,borderRadius:4,border:score===v?`2px solid ${SC_CLR[v]}`:"1px solid #e2e8f0",background:score===v?SC_CLR[v]+"22":"#fff",color:score===v?SC_CLR[v]:"#94a3b8",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{v}</button>))}</div>
+                              <div style={{width:100,fontSize:11,color:SC_CLR[score],fontWeight:500}}>{SC_LBL[score]}</div>
+                              <button onClick={()=>setExpandedNote(nOpen?null:nk)} style={{...B,padding:"4px 8px",fontSize:11,background:note?"#dbeafe":"#f1f5f9",color:note?"#1d4ed8":"#64748b"}}>{note?"Notes ✓":"Notes"}</button>
+                            </div>
+                            {nOpen&&<textarea value={note} onChange={e=>updateNote(activeStaff.id,comp.name,e.target.value)} placeholder="Interview notes..." style={{...I,marginTop:8,minHeight:60,resize:"vertical"}} />}
+                          </div>);})}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>)}
+
+            {/* ═══ FIT MATRIX ═══ */}
+            {tab==="Fit Matrix"&&(<div>
+              <div style={{fontSize:18,fontWeight:700,marginBottom:16}}>Person vs Position Fit</div>
+              {positions.length===0||staff.length===0?<div style={C}>Add staff and positions first (see Admin tab).</div>:(()=>{
+                const asd=staff.filter(s=>{const a=assessments[s.id];return a&&Object.values(a.scores||{}).some(v=>v>0);});
+                return asd.length===0?<div style={C}>No assessments yet.</div>:(
+                  <div><div style={{...C,padding:0,overflow:"auto"}}><table style={{borderCollapse:"collapse",fontSize:12,width:"100%"}}><thead><tr>
+                    <th style={{...TH,position:"sticky",left:0,background:"#f1f5f9",zIndex:2,minWidth:160}}>Staff</th>
+                    <th style={{...TH,minWidth:90}}>Overall</th>
+                    <th style={{...TH,minWidth:100}}>Shifts</th>
+                    {positions.map(p=><th key={p.id} style={{...TH,minWidth:120}}>{p.title}</th>)}
+                  </tr></thead><tbody>{asd.map(s=>{const sm=assessments[s.id]?.scores||{};const ws=calcWS(sm,allComp);const tier=calcTier(ws,thresholds);const sa=shiftAvail[s.id]||{};const badges=SHIFTS.filter(sh=>sa[sh]==="Preferred"||sa[sh]==="Available").map(sh=>({sh,pref:sa[sh]==="Preferred"}));return(
+                    <tr key={s.id} style={{borderBottom:"1px solid #e2e8f0"}}>
+                      <td style={{...TD,position:"sticky",left:0,background:"#fff",zIndex:1,fontWeight:500}}>{s.first_name} {s.last_name}</td>
+                      <td style={{...TD,textAlign:"center"}}><span style={{padding:"3px 10px",borderRadius:10,fontSize:11,fontWeight:600,background:tier.bg,color:tier.color}}>{ws.toFixed(1)}</span></td>
+                      <td style={TD}><div style={{display:"flex",gap:3,flexWrap:"wrap"}}>{badges.length>0?badges.map(b=>(<span key={b.sh} style={{padding:"2px 6px",borderRadius:8,fontSize:10,fontWeight:600,background:b.pref?"#f0fdf4":"#f0f9ff",color:b.pref?"#16a34a":"#0ea5e9",border:`1px solid ${b.pref?"#bbf7d0":"#bae6fd"}`}}>{b.sh.slice(0,3)}{b.pref?" ★":""}</span>)):<span style={{fontSize:10,color:"#94a3b8"}}>—</span>}</div></td>
+                      {positions.map(p=>{const comps=Array.isArray(p.competencies)?p.competencies:JSON.parse(p.competencies||"[]");const fit=calcFit(sm,comps);const fc=fit>=thresholds.ready?"#16a34a":fit>=thresholds.upskill?"#d97706":fit>0?"#dc2626":"#94a3b8";const fb=fit>=thresholds.ready?"#f0fdf4":fit>=thresholds.upskill?"#fffbeb":fit>0?"#fef2f2":"#f8fafc";return<td key={p.id} style={{...TD,textAlign:"center",background:fb}}><span style={{fontWeight:600,color:fc,fontSize:13}}>{fit>0?fit.toFixed(1):"—"}</span></td>;})}
+                    </tr>);})}</tbody></table></div>
+                  <div style={{display:"flex",gap:20,marginTop:12,fontSize:12,color:"#64748b"}}><span style={{color:"#16a34a"}}>● ≥ {thresholds.ready} Ready</span><span style={{color:"#d97706"}}>● ≥ {thresholds.upskill} Upskill</span><span style={{color:"#dc2626"}}>● &lt; {thresholds.upskill} Not Rec.</span><span>★ Preferred shift</span></div>
+                </div>);
+              })()}
+            </div>)}
+
+            {/* ═══ ADMIN ═══ */}
+            {tab==="Admin"&&(<div>
+              <div style={{fontSize:18,fontWeight:700,marginBottom:16}}>Administration</div>
+
+              {/* Admin sub-nav */}
+              <div style={{display:"flex",gap:8,marginBottom:20}}>
+                {[{k:"positions",l:"Positions"},{k:"competencies",l:"Competencies"},{k:"staff",l:"Staff"},{k:"thresholds",l:"Thresholds"}].map(s=>(<button key={s.k} onClick={()=>setAdminSection(s.k)} style={{...B,background:adminSection===s.k?"#0f172a":"#e2e8f0",color:adminSection===s.k?"#fff":"#334155"}}>{s.l}</button>))}
+              </div>
+
+              {/* POSITIONS ADMIN */}
+              {adminSection==="positions"&&(<div>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:16}}>
+                  <div style={{fontSize:15,fontWeight:600}}>Manage Positions ({positions.length})</div>
+                  <button onClick={()=>setShowUpload(showUpload==="positions"?null:"positions")} style={{...B,background:"#0f172a",color:"#fff",fontSize:12}}>Upload CSV</button>
+                </div>
+                {showUpload==="positions"&&(<div style={{...C,background:"#f0f9ff",border:"1px dashed #0ea5e9"}}><div style={{fontSize:13,marginBottom:8,color:"#0369a1"}}>CSV: title, headcount, competencies (semicolon-separated)</div><input type="file" accept=".csv" onChange={handleFileUpload("positions")} /></div>)}
+                <PosAdd onAdd={addPosition} allComp={allComp} />
+                {positions.map(p=>{const comps=Array.isArray(p.competencies)?p.competencies:JSON.parse(p.competencies||"[]");const isEd=editingPos===p.id;return(<div key={p.id} style={C}>
+                  {isEd?<PosEdit pos={p} comps={comps} allComp={allComp} onSave={d=>{updatePosition(p.id,d);setEditingPos(null);}} onCancel={()=>setEditingPos(null)} />:(
+                    <div style={{display:"flex",justifyContent:"space-between"}}><div><div style={{fontSize:15,fontWeight:600}}>{p.title}</div><div style={{fontSize:12,color:"#64748b",marginTop:2}}>Headcount: {p.headcount}</div><div style={{display:"flex",flexWrap:"wrap",gap:4,marginTop:8}}>{comps.map(c=><span key={c} style={{padding:"2px 8px",background:"#f1f5f9",borderRadius:10,fontSize:11}}>{c}</span>)}</div></div>
+                    <div style={{display:"flex",gap:4,alignSelf:"flex-start"}}><button onClick={()=>setEditingPos(p.id)} style={{...B,padding:"4px 10px",fontSize:11,background:"#dbeafe",color:"#1d4ed8"}}>Edit</button><button onClick={()=>{if(confirm(`Remove ${p.title}?`))removePosition(p.id)}} style={{...B,padding:"4px 10px",fontSize:11,background:"#fee2e2",color:"#dc2626"}}>Remove</button></div></div>
+                  )}
+                </div>);})}
+              </div>)}
+
+              {/* COMPETENCIES ADMIN */}
+              {adminSection==="competencies"&&(<div>
+                <div style={{fontSize:15,fontWeight:600,marginBottom:16}}>Manage Competencies</div>
+                <div style={{...C,marginBottom:20}}>
+                  <div style={{fontSize:13,fontWeight:600,marginBottom:12}}>Add Custom Competency</div>
+                  <CustomCompAdd onAdd={addCustomComp} />
+                </div>
+                {["Hard Skills","Cultural","Leadership"].map(d=>(<div key={d} style={C}>
+                  <div style={{fontSize:14,fontWeight:600,marginBottom:8}}>{d}</div>
+                  <div style={{display:"flex",flexWrap:"wrap",gap:6}}>{allComp.filter(c=>c.domain===d).map(c=>{const isCustom=customComps.find(cc=>cc.name===c.name);return(<span key={c.name} style={{padding:"4px 10px",borderRadius:14,fontSize:11,fontWeight:500,background:isCustom?"#dbeafe":"#f1f5f9",color:isCustom?"#1d4ed8":"#334155",border:`1px solid ${isCustom?"#93c5fd":"#e2e8f0"}`}}>{c.name}{isCustom?" (custom)":""}</span>);})}</div>
+                </div>))}
+              </div>)}
+
+              {/* STAFF ADMIN */}
+              {adminSection==="staff"&&(<div>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:16}}>
+                  <div style={{fontSize:15,fontWeight:600}}>Manage Staff ({staff.length})</div>
+                  <button onClick={()=>setShowUpload(showUpload==="staff"?null:"staff")} style={{...B,background:"#0f172a",color:"#fff",fontSize:12}}>Upload CSV</button>
+                </div>
+                {showUpload==="staff"&&(<div style={{...C,background:"#f0f9ff",border:"1px dashed #0ea5e9"}}><div style={{fontSize:13,marginBottom:8,color:"#0369a1"}}>CSV: first_name, last_name, job_role, cost_centre, employment_type, shift, manager</div><input type="file" accept=".csv" onChange={handleFileUpload("staff")} /></div>)}
+                <StaffAdd onAdd={addStaff} />
+                {staff.length>0&&(<div style={{...C,padding:0,overflow:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}><thead><tr style={{background:"#f1f5f9"}}>{["Name","Role","Area","Type","Shift",""].map(h=><th key={h} style={TH}>{h}</th>)}</tr></thead><tbody>
+                  {staff.map(s=>{const isEd=editingStaff===s.id;return(
+                    <tr key={s.id} style={{borderBottom:"1px solid #e2e8f0"}}>
+                      <td style={TD}>{isEd?<span style={{display:"flex",gap:4}}><input value={s.first_name} onChange={e=>updateStaffField(s.id,"first_name",e.target.value)} style={{...I,padding:"4px 8px",width:"45%"}} /><input value={s.last_name} onChange={e=>updateStaffField(s.id,"last_name",e.target.value)} style={{...I,padding:"4px 8px",width:"55%"}} /></span>:<span style={{fontWeight:500}}>{s.first_name} {s.last_name}</span>}</td>
+                      <td style={TD}>{isEd?<input value={s.job_role} onChange={e=>updateStaffField(s.id,"job_role",e.target.value)} style={{...I,padding:"4px 8px"}} />:s.job_role}</td>
+                      <td style={TD}>{s.cost_centre}</td>
+                      <td style={TD}>{s.employment_type}</td>
+                      <td style={TD}>{s.shift}</td>
+                      <td style={TD}><div style={{display:"flex",gap:4}}><button onClick={()=>setEditingStaff(isEd?null:s.id)} style={{...B,padding:"4px 8px",fontSize:11,background:isEd?"#16a34a":"#e2e8f0",color:isEd?"#fff":"#334155"}}>{isEd?"Save":"Edit"}</button><button onClick={()=>{if(confirm(`Remove ${s.first_name} ${s.last_name}?`))removeStaff(s.id)}} style={{...B,padding:"4px 8px",fontSize:11,background:"#fee2e2",color:"#dc2626"}}>✕</button></div></td>
+                    </tr>);})}
+                </tbody></table></div>)}
+              </div>)}
+
+              {/* THRESHOLDS ADMIN */}
+              {adminSection==="thresholds"&&(<div>
+                <div style={{fontSize:15,fontWeight:600,marginBottom:16}}>Tier Thresholds</div>
+                <div style={C}>
+                  <div style={{display:"flex",gap:24,flexWrap:"wrap",alignItems:"center"}}>
+                    <label style={{fontSize:13}}>Transfer Ready ≥ <input type="number" step="0.1" min="0" max="5" value={thresholds.ready} onChange={e=>saveThresholds({...thresholds,ready:parseFloat(e.target.value)||0})} style={{...I,width:70,marginLeft:8}} /></label>
+                    <label style={{fontSize:13}}>Upskill ≥ <input type="number" step="0.1" min="0" max="5" value={thresholds.upskill} onChange={e=>saveThresholds({...thresholds,upskill:parseFloat(e.target.value)||0})} style={{...I,width:70,marginLeft:8}} /></label>
+                  </div>
+                  <div style={{fontSize:12,color:"#64748b",marginTop:12}}>Below the Upskill threshold = Not Recommended. Changes save to Supabase immediately.</div>
+                </div>
+              </div>)}
+
+            </div>)}
+
+          </div>
+        </div>
+      );
+    }
+
+    // ─── SUB COMPONENTS ───
+    function StaffAdd({onAdd}){
+      const [f,setF]=useState({first_name:"",last_name:"",job_role:"",cost_centre:"",employment_type:"Casual",shift:"Day"});
+      const submit=()=>{if(!f.first_name.trim()||!f.last_name.trim())return;onAdd({...f});setF({first_name:"",last_name:"",job_role:"",cost_centre:"",employment_type:"Casual",shift:"Day"});};
+      return(<div style={{...C,display:"flex",gap:10,alignItems:"flex-end",flexWrap:"wrap"}}>
+        {[{k:"first_name",l:"FIRST NAME",f:1.5},{k:"last_name",l:"LAST NAME",f:1.5},{k:"job_role",l:"ROLE",f:1.5},{k:"cost_centre",l:"AREA",f:1}].map(x=>(<div key={x.k} style={{flex:x.f,minWidth:100}}><label style={{fontSize:11,fontWeight:600,color:"#64748b",display:"block",marginBottom:4}}>{x.l}</label><input value={f[x.k]} onChange={e=>setF({...f,[x.k]:e.target.value})} style={I} /></div>))}
+        <div style={{width:100}}><label style={{fontSize:11,fontWeight:600,color:"#64748b",display:"block",marginBottom:4}}>TYPE</label><select value={f.employment_type} onChange={e=>setF({...f,employment_type:e.target.value})} style={I}><option>Casual</option><option>Full-Time</option><option>Part-Time</option></select></div>
+        <div style={{width:100}}><label style={{fontSize:11,fontWeight:600,color:"#64748b",display:"block",marginBottom:4}}>SHIFT</label><select value={f.shift} onChange={e=>setF({...f,shift:e.target.value})} style={I}><option>Day</option><option>Afternoon</option></select></div>
+        <button onClick={submit} style={{...B,background:"#0f172a",color:"#fff",height:38}}>Add</button>
+      </div>);
+    }
+
+    function CustomCompAdd({onAdd}){
+      const [name,setName]=useState("");const [domain,setDomain]=useState("Hard Skills");
+      return(<div style={{display:"flex",gap:10,alignItems:"flex-end",flexWrap:"wrap"}}>
+        <div style={{flex:2,minWidth:200}}><label style={{fontSize:11,fontWeight:600,color:"#64748b",display:"block",marginBottom:4}}>COMPETENCY NAME</label><input value={name} onChange={e=>setName(e.target.value)} style={I} placeholder="e.g. Shrink Wrap Machine" /></div>
+        <div style={{width:160}}><label style={{fontSize:11,fontWeight:600,color:"#64748b",display:"block",marginBottom:4}}>DOMAIN</label><select value={domain} onChange={e=>setDomain(e.target.value)} style={I}><option>Hard Skills</option><option>Cultural</option><option>Leadership</option></select></div>
+        <button onClick={()=>{onAdd(name,domain);setName("");}} style={{...B,background:"#0f172a",color:"#fff",height:38}}>Add</button>
+      </div>);
+    }
+
+    function PosAdd({onAdd,allComp}){
+      const [title,setTitle]=useState("");const [hc,setHc]=useState("1");const [sel,setSel]=useState([]);const [show,setShow]=useState(false);
+      const toggle=c=>setSel(p=>p.includes(c)?p.filter(x=>x!==c):[...p,c]);
+      const submit=()=>{if(!title.trim())return;onAdd({title,headcount:parseInt(hc)||1,competencies:[...sel]});setTitle("");setHc("1");setSel([]);setShow(false);};
+      if(!show)return(<button onClick={()=>setShow(true)} style={{...B,background:"#0f172a",color:"#fff",marginBottom:16}}>+ Add Position</button>);
+      return(<div style={C}>
+        <div style={{display:"flex",gap:12,marginBottom:16,flexWrap:"wrap"}}>
+          <div style={{flex:2,minWidth:200}}><label style={{fontSize:11,fontWeight:600,color:"#64748b",display:"block",marginBottom:4}}>TITLE</label><input value={title} onChange={e=>setTitle(e.target.value)} style={I} placeholder="e.g. Line Operator" /></div>
+          <div style={{width:100}}><label style={{fontSize:11,fontWeight:600,color:"#64748b",display:"block",marginBottom:4}}>HEADCOUNT</label><input type="number" min="1" value={hc} onChange={e=>setHc(e.target.value)} style={I} /></div>
+        </div>
+        <div style={{fontSize:11,fontWeight:600,color:"#64748b",marginBottom:8,textTransform:"uppercase"}}>Required Competencies</div>
+        {["Hard Skills","Cultural","Leadership"].map(d=>(<div key={d} style={{marginBottom:12}}><div style={{fontSize:12,fontWeight:600,marginBottom:6}}>{d}</div><div style={{display:"flex",flexWrap:"wrap",gap:6}}>{allComp.filter(c=>c.domain===d).map(c=>(<button key={c.name} onClick={()=>toggle(c.name)} style={{padding:"4px 10px",borderRadius:14,fontSize:11,fontWeight:500,cursor:"pointer",border:"1px solid",background:sel.includes(c.name)?"#0f172a":"#fff",color:sel.includes(c.name)?"#fff":"#64748b",borderColor:sel.includes(c.name)?"#0f172a":"#cbd5e1"}}>{c.name}</button>))}</div></div>))}
+        <div style={{display:"flex",gap:8,marginTop:8}}><button onClick={submit} style={{...B,background:"#0f172a",color:"#fff"}}>Add Position</button><button onClick={()=>{setShow(false);setTitle("");setSel([]);}} style={{...B,background:"#f1f5f9",color:"#64748b"}}>Cancel</button></div>
+      </div>);
+    }
+
+    function PosEdit({pos,comps,allComp,onSave,onCancel}){
+      const [title,setTitle]=useState(pos.title);const [hc,setHc]=useState(String(pos.headcount));const [sel,setSel]=useState([...comps]);
+      const toggle=c=>setSel(p=>p.includes(c)?p.filter(x=>x!==c):[...p,c]);
+      return(<div>
+        <div style={{display:"flex",gap:12,marginBottom:16,flexWrap:"wrap"}}>
+          <div style={{flex:2,minWidth:200}}><label style={{fontSize:11,fontWeight:600,color:"#64748b",display:"block",marginBottom:4}}>TITLE</label><input value={title} onChange={e=>setTitle(e.target.value)} style={I} /></div>
+          <div style={{width:100}}><label style={{fontSize:11,fontWeight:600,color:"#64748b",display:"block",marginBottom:4}}>HEADCOUNT</label><input type="number" min="1" value={hc} onChange={e=>setHc(e.target.value)} style={I} /></div>
+        </div>
+        <div style={{fontSize:11,fontWeight:600,color:"#64748b",marginBottom:8,textTransform:"uppercase"}}>Required Competencies</div>
+        {["Hard Skills","Cultural","Leadership"].map(d=>(<div key={d} style={{marginBottom:12}}><div style={{fontSize:12,fontWeight:600,marginBottom:6}}>{d}</div><div style={{display:"flex",flexWrap:"wrap",gap:6}}>{allComp.filter(c=>c.domain===d).map(c=>(<button key={c.name} onClick={()=>toggle(c.name)} style={{padding:"4px 10px",borderRadius:14,fontSize:11,fontWeight:500,cursor:"pointer",border:"1px solid",background:sel.includes(c.name)?"#0f172a":"#fff",color:sel.includes(c.name)?"#fff":"#64748b",borderColor:sel.includes(c.name)?"#0f172a":"#cbd5e1"}}>{c.name}</button>))}</div></div>))}
+        <div style={{display:"flex",gap:8,marginTop:12}}><button onClick={()=>onSave({title,headcount:parseInt(hc)||1,competencies:sel})} style={{...B,background:"#16a34a",color:"#fff"}}>Save</button><button onClick={onCancel} style={{...B,background:"#f1f5f9",color:"#64748b"}}>Cancel</button></div>
+      </div>);
+    }
+
+    ReactDOM.render(<App />, document.getElementById("root"));
+  </script>
 </body>
 </html>
