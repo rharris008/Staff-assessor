@@ -164,7 +164,7 @@
       return(
         <div style={{background:"#f8fafc",minHeight:"100vh"}}>
           <div style={{background:"linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%)",padding:"20px 32px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-            <div onClick={()=>{setTab("Dashboard");setDashFilter(null);setActiveStaffId(null);}} title="Back to Dashboard" style={{cursor:"pointer"}}><div style={{color:"#fff",fontSize:22,fontWeight:700}}>ABH Skills Matrix Tracker</div><div style={{color:"#94a3b8",fontSize:13,marginTop:2}}>St Marys → Erskine Park · Floor Staff Assessment</div></div>
+            <div onClick={()=>{setTab("Dashboard");setDashFilter(null);setActiveStaffId(null);}} title="Back to Dashboard" style={{cursor:"pointer",display:"flex",alignItems:"center",gap:12}}><img src="abh-logo.png" alt="ABH" style={{height:42,width:"auto"}}/><div><div style={{color:"#fff",fontSize:22,fontWeight:700}}>ABH Skills Matrix Tracker</div><div style={{color:"#94a3b8",fontSize:13,marginTop:2}}>St Marys → Erskine Park · Floor Staff Assessment</div></div></div>
             <div style={{display:"flex",gap:8}}>
               <button onClick={exportCSV} style={{...B,background:"#334155",color:"#e2e8f0"}}>Export CSV</button>
               <button onClick={()=>{sessionStorage.removeItem("abh_sm_auth");setAuthed(false);setPin("");}} style={{...B,background:"#7f1d1d",color:"#fecaca"}}>Logout</button>
